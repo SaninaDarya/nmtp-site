@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Курс валют</title>
+    <link rel="stylesheet" href="main.css">
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="icon" href="favicon-16x16.png">
+    <link rel="icon" href="favicon-32x32.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .currency-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #f9f9f9;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #e0e0e0;
+        }
+        .currency-input {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .currency-input input {
+            flex: 2;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+        }
+        .currency-input label {
+            flex: 1;
+            font-weight: bold;
+        }
+        .rate-info {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        canvas {
+            max-height: 400px;
+            margin-top: 30px;
+        }
+        .chart-container {
+            margin-top: 40px;
+        }
+        .click-info {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #cc181e;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo-area">
+            <img src="ПАО__НМТП.jpg" alt="Логотип НМТП">
+        </div>
+        <ul class="menu">
+            <li><a href="index.html" class="nav-link">О компании</a></li>
+            <li><a href="news.html" class="nav-link">Новости</a></li>
+            <li><a href="currency.html" class="nav-link active">Курс валют</a></li>
+            <li><a href="contacts.html" class="nav-link">Контакты</a></li>
+            <li><a href="video.html" class="nav-link">Видео</a></li>
+        </ul>
+    </div>
+    <div class="content">
+        <h1>Курс валют</h1>
+        <div style="max-width: 500px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 12px;">
+            <p id="rateInfo" style="text-align: center; font-weight: bold;">Загрузка...</p>
+
+            <div style="margin: 15px 0;">
+                <label>Рубли (RUB):</label>
+                <input type="number" id="rubInput" style="width: 100%; padding: 8px; margin-top: 5px;" value="1000">
+            </div>
+
+            <div style="margin: 15px 0;">
+                <label>Южноафриканский рэнд (ZAR):</label>
+                <input type="number" id="zarInput" style="width: 100%; padding: 8px; margin-top: 5px;" value="0">
+            </div>
+        </div>
+
+        <div style="margin-top: 40px;">
+            <h2>Изменение курса ZAR за 45 дней</h2>
+            <canvas id="zarChart" style="max-height: 400px;"></canvas>
+            <p id="clickResult" style="margin-top: 15px; color: #cc181e; text-align: center;"></p>
+        </div>
+
+        <footer style="margin-top: 50px;">
+            &copy; 2026 ПАО «НМТП». Все права защищены.
+        </footer>
+    </div>
+
+    <a href="#" class="go-top">Наверх</a>
+    <script>
+        let kurs = null;
+        let selectedIndex = null;
+        let chart = null;
+        let labels = [];
+        let rates = [];
+
+        // Загружаем текущий курс
+        fetch('https://www.cbr-xml-daily.ru/daily_json.js')
+            .then(res => res.json())
+            .then(data => {
+                kurs = data.Valute.ZAR.Value / data.Valute.ZAR.Nominal;
+                const date = new Date(data.Date).toLocaleDateString('ru-RU');
+                document.getElementById('rateInfo').innerHTML = `Курс на ${date}: 1 ZAR = ${kurs.toFixed(4)} RUB | 1 RUB = ${(1/kurs).toFixed(4)} ZAR`;
+                convert();
+                // После загрузки курса запускаем загрузку истории
+                loadHistoryAndDraw();
+            })
+            .catch(() => {
+                document.getElementById('rateInfo').innerHTML = 'Ошибка загрузки курса';
+                loadHistoryAndDraw();
+            });
+
+        function convert() {
+            if (!kurs) return;
+            const rub = document.getElementById('rubInput');
+            const zar = document.getElementById('zarInput');
+            if (document.activeElement === rub) {
+                zar.value = (rub.value / kurs).toFixed(2);
+            } else {
+                rub.value = (zar.value * kurs).toFixed(2);
+            }
+        }
+
+        document.getElementById('rubInput').addEventListener('input', convert);
+        document.getElementById('zarInput').addEventListener('input', convert);
+
+        async function loadHistoryAndDraw() {
+            const today = new Date();
+            const promises = [];
+            labels = [];
+            rates = [];
+
+            // Делаем 46 запросов (от 45 дней назад до сегодня)
+            for (let i = 45; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const url = `https://www.cbr-xml-daily.ru/archive/${year}/${month}/${day}/daily_json.js`;
+                
+                labels.push(`${day}.${month}`);
+                
+                const promise = fetch(url)
+                    .then(res => {
+                        if (res.ok) return res.json();
+                        else return null;
+                    })
+                    .then(data => {
+                        if (data && data.Valute && data.Valute.ZAR) {
+                            return data.Valute.ZAR.Value / data.Valute.ZAR.Nominal;
+                        }
+                        return null;
+                    })
+                    .catch(() => null);
+                
+                promises.push(promise);
+            }
+
+            let results = await Promise.all(promises);
+            
+            // Заполняем пропуски последним известным значением
+            let lastValidRate = null;
+            for (let i = 0; i < results.length; i++) {
+                if (results[i] !== null) {
+                    lastValidRate = results[i];
+                } else if (lastValidRate !== null) {
+                    results[i] = lastValidRate;
+                }
+            }
+            
+            rates = results;
+
+            if (kurs && rates[rates.length - 1] === null) {
+                rates[rates.length - 1] = kurs;
+            }
+
+            let hasData = false;
+            for (let i = 0; i < rates.length; i++) {
+                if (rates[i] !== null) {
+                    hasData = true;
+                    break;
+                }
+            }
+            
+            if (!hasData) {
+                console.warn('Нет данных от API, использую демонстрационные данные');
+                for (let i = 0; i < labels.length; i++) {
+                    rates[i] = 0.050 + (Math.random() * 0.01);
+                }
+            }
+            
+            drawChartWithHighlight();
+        }
+
+        function drawChartWithHighlight() {
+            const ctx = document.getElementById('zarChart').getContext('2d');
+            if (chart) chart.destroy();
+
+            const bgColors = rates.map((_, idx) => idx === selectedIndex ? '#3366cc' : '#cc181e');
+
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Курс ZAR (RUB)',
+                        data: rates,
+                        backgroundColor: bgColors,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { enabled: false }
+                    },
+                    scales: {
+                        x: { ticks: { display: true }, title: { display: false } },
+                        y: { ticks: { display: true }, title: { display: false } }
+                    },
+                    onClick: (event, active) => {
+                        if (active.length > 0) {
+                            const idx = active[0].index;
+                            selectedIndex = idx;
+                            drawChartWithHighlight();
+                            const rate = rates[idx];
+                            if (rate !== null) {
+                                document.getElementById('clickResult').innerHTML = `Дата: ${labels[idx]} | 1 ZAR = ${rate.toFixed(4)} RUB`;
+                            } else {
+                                document.getElementById('clickResult').innerHTML = `Дата: ${labels[idx]} | Данных нет`;
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        document.querySelector('.go-top').addEventListener('click', function(e) {
+            e.preventDefault();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    </script>
+</body>
+</html>
